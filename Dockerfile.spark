@@ -1,0 +1,13 @@
+FROM apache/spark:3.5.1
+
+USER root
+
+# Install Python dependencies
+RUN pip install --no-cache-dir cassandra-driver==3.28.0
+
+USER spark
+
+# Copy spark streaming script
+COPY spark_stream.py /opt/spark/spark_stream.py
+
+WORKDIR /opt/spark
