@@ -1,3 +1,4 @@
+<img width="3274" height="1221" alt="image" src="https://github.com/user-attachments/assets/4eced3f1-d3a8-429f-bcfd-d641a9716621" />
 
 
 ## 1. Docker Compose 
