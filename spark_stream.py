@@ -139,22 +139,4 @@ if __name__ == "__main__":
                                .option('table', 'streaming_data')
                                .start())
             streaming_query.awaitTermination()
-        # Connect to Kafka
-        spark_df = connect_to_kafka(spark_conn)
-        selected_df = parse_kafka_message(spark_df)
-        selected_df.printSchema()
         
-        #create_cassandra_connection()
-        session = create_cassandra_connection()
-        if session is not None :
-            create_keyspace(session)
-            create_table(session)
-            logging.info("Setup completed successfully")
-            
-            streaming_query = (selected_df.writeStream
-                               .format("org.apache.spark.sql.cassandra")
-                               .option('checkpointLocation', '/tmp/spark_checkpoint')
-                               .option('keyspace', 'spark_streaming')
-                               .option('table', 'streaming_data')
-                               .start() )
-            streaming_query.awaitTermination()
