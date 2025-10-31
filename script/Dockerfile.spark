@@ -7,7 +7,7 @@ RUN pip install --no-cache-dir cassandra-driver==3.28.0
 
 USER spark
 
-# Copy spark streaming script
-COPY spark_stream.py /opt/spark/spark_stream.py
+# Copy spark streaming script into the image so the container can run without host mounts
+COPY ../spark_stream.py /opt/spark/spark_stream.py
 
 WORKDIR /opt/spark

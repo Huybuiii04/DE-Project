@@ -198,8 +198,8 @@ services:
 
   spark-streaming:
     build:
-      context: script
-      dockerfile: Dockerfile.spark
+      context: .
+      dockerfile: script/Dockerfile.spark
     image: spark-streaming:latest
     container_name: spark-streaming
     hostname: spark-streaming
@@ -207,8 +207,6 @@ services:
       - broker
       - cassandra_db
       - spark-master
-    volumes:
-      - ./spark_stream.py:/opt/spark/spark_stream.py
     command: /opt/spark/bin/spark-submit --master local[*] --packages com.datastax.spark:spark-cassandra-connector_2.12:3.5.1,org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.1 --conf spark.jars.ivy=/tmp/.ivy2 /opt/spark/spark_stream.py
     restart: "no"
     networks:

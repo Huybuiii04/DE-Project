@@ -1,89 +1,131 @@
 import uuid
-from datetime import datetime
+import hashlib
+import json
+import time
+import logging
+from datetime import datetime, timedelta
 from airflow import DAG
 from airflow.operators.python import PythonOperator
+import requests
+from confluent_kafka import Producer
+
+#configurations
+API_ENDPOINT = "https://randomuser.me/api/"
+KAFKA_BOOTSTRAP_SERVERS = ['broker:29092']
+KAFKA_TOPIC = 'streaming_data'
+MAX_RECORDS = 1000
+SLEEP_INTERVAL = 0.1 
+
 
 default_args = {
-    'owner' : 'huybui04',
-    'start_date':datetime(2025 , 10, 27, 0, 0)
+    'owner': 'huybui04',
+    'start_date': datetime(2025, 10, 27, 0, 0),
+    'retries': 1,
+    'retry_delay': timedelta(seconds=5)
 }
-def get_data():
-    import requests
-    import time
-    import logging
 
+def get_data(url=API_ENDPOINT):
     max_retries = 5
     retry_delay = 3
-    for attemp in range(max_retries):
+
+    for attempt in range(max_retries):
         try:
-            res = requests.get("https://randomuser.me/api/", timeout=10)
+            res = requests.get(url, timeout=10)
             res.raise_for_status()
-            res = res.json()
-            res = res['results'][0]
-            return res
+            if res.status_code == 200:
+                res = res.json()['results'][0]
+                return res
         except requests.exceptions.RequestException as e:
-            logging.warning(f"Attempt {attemp+1}/{max_retries}: {e}")
-            if attemp < max_retries -1 :
+            logging.warning(f"Attempt {attempt+1}/{max_retries}: {e}")
+            if attempt < max_retries - 1:
                 time.sleep(retry_delay)
-            else :
-                logging.error(f"fail to get data after{max_retries} attempts")
+            else:
+                logging.error(f"Failed to get data after {max_retries} attempts.")
                 raise
 
-def format_data(res):
-    data ={}
-    location = res['location']
-    data['id'] =  str(uuid.uuid4())
-    data['first_name'] = res['name']['first']
-    data['last_name'] = res['name']['last']
-    data['gender'] = res['gender']
-    data['address'] = f"{str(location['street']['number'])} {location['street']['name']}, " \
-                      f"{location['city']}, {location['state']}, {location['country']}"
 
-    data['post_code'] = location['postcode']
-    data['email'] = res['email']
-    data['user_name'] = res['login']['username']
-    data['dob'] = res['dob']['date']
-    data['registered_date'] = res['registered']['date']
-    data['phone']=res['phone']
-    data['picture'] = res['picture']['medium']
-    return data
+def format_data(res):
+    location = res['location']
+    return {
+        "id": str(uuid.uuid4()),
+        "first_name": res['name']['first'],
+        "last_name": res['name']['last'],
+        "gender": res['gender'],
+        "address": f"{location['street']['number']} {location['street']['name']}, "
+                   f"{location['city']}, {location['state']}, {location['country']}",
+        "post_code": encrypt_zip(location['postcode']),  
+        "email": res['email'],
+        "user_name": res['login']['username'],
+        "dob": res['dob']['date'],
+        "registered_date": res['registered']['date'],
+        "phone": res['phone'],
+        "picture": res['picture']['medium']
+    }
+
+def encrypt_zip(zip_code):
+    """Hashes the zip code using MD5 and returns its integer representation."""
+    zip_str = str(zip_code)
+    return int(hashlib.md5(zip_str.encode()).hexdigest(), 16)
+
+def configure_kafka(servers=KAFKA_BOOTSTRAP_SERVERS):
+    """Creates and returns a Confluent Kafka Producer instance."""
+    settings = {
+        'bootstrap.servers': ','.join(servers),
+        'client.id': 'airflow_producer'
+    }
+    return Producer(settings)
+
+
+def delivery_status(err, msg):
+    """Callback to report Kafka delivery status."""
+    if err is not None:
+        logging.error(f" Message delivery failed: {err}")
+    else:
+        logging.info(f" Message delivered to {msg.topic()} [partition {msg.partition()}]")
 
 
 def stream_data():
-    import json
-    from kafka import KafkaProducer
-    import time
-    import logging
-
-    producer = KafkaProducer(bootstrap_servers=['broker:29092'],max_block_ms = 5000)
+    """Fetches, formats, and streams random user data to Kafka."""
+    producer = configure_kafka()
     count = 0
-    max_records = 1000
 
-    while count < max_records:
-        try :
+    logging.info(" Starting to stream data to Kafka...")
+
+    while count < MAX_RECORDS:
+        try:
             res = get_data()
             formatted_data = format_data(res)
 
-            producer.send('streaming_data', json.dumps(formatted_data).encode('utf-8'))
-            count +=1
-            logging.info(f'Sent user{count}/{max_records} ')
+            producer.produce(
+                topic=KAFKA_TOPIC,
+                value=json.dumps(formatted_data).encode('utf-8'),
+                callback=delivery_status
+            )
+            producer.poll(0)  # Trigger delivery report callbacks
+            count += 1
+            logging.info(f"Sent record {count}/{MAX_RECORDS}")
 
+            time.sleep(SLEEP_INTERVAL)
 
-            time.sleep(0.1) # delay 100s
         except Exception as e:
-            logging.error(f"An error occured : {e}")
+            logging.error(f" Error occurred while streaming: {e}")
             continue
-    logging.info("Compeled streaming data")
+
+    producer.flush()
+    logging.info(" Completed streaming data to Kafka.")
 
 
+with DAG(
+    dag_id='project_streaming',
+    default_args=default_args,
+    schedule_interval='@daily',
+    catchup=False,
+    description='Stream RandomUser API data to Kafka using Confluent Kafka producer',
+) as dag:
 
-with DAG (
-    dag_id = 'project_streaming_api',
-    default_args = default_args,
-    schedule_interval = '@daily',
-    catchup = False,
-) as dag :
     streaming_task = PythonOperator(
-        task_id = 'streaming_task',
-        python_callable = stream_data ,
+        task_id='streaming_task',
+        python_callable=stream_data,
     )
+
+    streaming_task

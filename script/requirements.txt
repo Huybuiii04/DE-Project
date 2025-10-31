@@ -1,0 +1,7 @@
+
+apache-airflow==2.6.0
+apache-airflow-providers-common-sql==1.8.0
+requests==2.31.0
+cassandra-driver==3.28.0
+pyspark==3.5.1
+confluent-kafka==2.4.0
