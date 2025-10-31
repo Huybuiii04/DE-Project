@@ -67,7 +67,7 @@ def parse_kafka_message(spark_df):
         StructField("phone", StringType(), True),
         StructField("picture", StringType(), True)
     ])
-
+    #chuyển message dạng JSON (nhận từ Kafka) → thành DataFrame
     user_df = (
         spark_df.selectExpr("CAST(value AS STRING) as value")
         .select(from_json(col('value'), schema).alias('data'))
